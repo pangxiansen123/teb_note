@@ -162,7 +162,7 @@ namespace teb_local_planner
 
       // setup callback for custom obstacles
       //订阅obstacles
-      // 应该是加入自己的障碍物
+      // 应该是加入自己的障碍物，表示自己加的是动态的障碍物
       custom_obst_sub_ = nh.subscribe("obstacles", 1, &TebLocalPlannerROS::customObstacleCB, this);
       // setup callback for custom via-points
       //订阅via_points,调用函数customViaPointsCB
@@ -317,6 +317,8 @@ namespace teb_local_planner
     //下面的判断语句就是是否重写局部子目标的方向，
     //看不懂也没事，就是把目标方向给 robot_goal_.theta()
     //所以下面就是让机器人向着robot_goal_前进
+    // http://wiki.ros.org/teb_local_planner/Tutorials/Frequently%20Asked%20Questions
+    // 里面有一段是对这个进行说明的
     if (cfg_.trajectory.global_plan_overwrite_orientation)
     {
       // 根据当前的目标点和未来的目标点,就算出合适的目标角度
@@ -390,11 +392,16 @@ namespace teb_local_planner
     if (cfg_.robot.is_footprint_dynamic)
     {
       // Update footprint of the robot and minimum and maximum distance from the center of the robot to its footprint vertices.
-      // 更新机器人的足迹，以及从机器人中心到足迹顶点的最小和最大距离。
+      // 更新机器人的足迹footprint_spec_，以及从机器人中心到足迹顶点的最小和最大距离。
       footprint_spec_ = costmap_ros_->getRobotFootprint();
       costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius);
     }
     // 检查轨迹的冲突情况
+    // footprint_spec机器人的轮廓
+    // look_ahead_idx指定每个采样间隔应在预测计划的哪个位置进行可行性检查。检测姿态在规划路径的可行性的时间间隔
+    // 检查两个姿态之间的距离是否大于机器人半径或方向差值大于指定的阈值，并在这种情况下进行插值。
+    // 这个为什么进行差值呢,因为图中可能两个位姿节点之间的距离变大,障碍物位于中间
+    // 所以要做的就是插值,在两个节点之间插值,然后判断是否和障碍物相撞
     bool feasible = planner_->isTrajectoryFeasible(costmap_model_.get(), footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius, cfg_.trajectory.feasibility_check_no_poses);
     // 表示轨迹是冲突的
     if (!feasible)
@@ -406,7 +413,7 @@ namespace teb_local_planner
       // now we reset everything to start again with the initialization of new trajectories.
       planner_->clearPlanner();
       ROS_WARN("TebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
-
+      // 如果轨迹不正常,那么也加1
       ++no_infeasible_plans_; // increase number of infeasible solutions in a row
       time_last_infeasible_plan_ = ros::Time::now();
       last_cmd_ = cmd_vel;
@@ -416,12 +423,18 @@ namespace teb_local_planner
     // Get the velocity command for this sampling interval
     //获取这个采样间隔的速度命令
     //检查速度指令是否有效
+    // control_look_ahead_poses用于提取速度命令的姿态索引
+    // look_ahead_poses什么意思呢?就是计算好图之后,位姿节点和时间节点都是会更新的,那么计算速度就是计算前几个(control_look_ahead_poses)位姿节点和时间节点
+    // 默认control_look_ahead_poses为1
+    // 根据图,计算速度放在cmd_vel
     if (!planner_->getVelocityCommand(cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z, cfg_.trajectory.control_look_ahead_poses))
     {
       planner_->clearPlanner();
       ROS_WARN("TebLocalPlannerROS: velocity command invalid. Resetting planner...");
+      // 说明这个计算出来的最优解不正常,进行计数
       ++no_infeasible_plans_; // increase number of infeasible solutions in a row
       time_last_infeasible_plan_ = ros::Time::now();
+      // 不正常的速度是0,记录这个速度
       last_cmd_ = cmd_vel;
       return false;
     }
@@ -436,7 +449,7 @@ namespace teb_local_planner
     // convert rot-vel to steering angle if desired (carlike robot).如果需要的话，将rot-vel转换为转向角度(类车机器人)
     // The min_turning_radius is allowed to be slighly smaller since it is a soft-constraint
     // and opposed to the other constraints not affected by penalty_epsilon. The user might add a safety margin to the parameter itself.
-    //对于全向机器人底盘，这个是不用的cmd_angle_instead_rotvel这个为应该是false
+    //对于全向机器人底盘差速轮是false，这个是不用的cmd_angle_instead_rotvel这个为应该是false
     // 对于车辆类型的这个是true
     if (cfg_.robot.cmd_angle_instead_rotvel)
     {
@@ -465,6 +478,9 @@ namespace teb_local_planner
     // Now visualize everything
     planner_->visualize();
     visualization_->publishObstacles(obstacles_);
+    // 通过点
+    //transformed_plan就是已经弄好的局部路径规划
+    //min_separation两个连续点之间的最小距离,处理后把通过点放到via_points_中
     visualization_->publishViaPoints(via_points_);
     visualization_->publishGlobalPlan(global_plan_);
     return true;
@@ -565,7 +581,7 @@ namespace teb_local_planner
   }
 
   //这个函数也是更新障碍物信息，同样存储在obstacles_里面
-  // 自己没有发布这个obstacle的话题,所以这个不会运行
+  // 自己没有发布这个obstacle的话题,所以这个进去之后立马就返回
   void TebLocalPlannerROS::updateObstacleContainerWithCustomObstacles()
   {
     // Add custom obstacles obtained via message
@@ -973,6 +989,8 @@ namespace teb_local_planner
     }
     else if (vx < -max_vel_x_backwards)
       vx = -max_vel_x_backwards;
+
+
   }
 
   //全向轮底盘不用这个

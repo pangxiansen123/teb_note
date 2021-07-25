@@ -60,7 +60,7 @@ public:
     ROS_ASSERT_MSG(cfg_ && _measurement && robot_model_, "You must call setTebConfig(), setObstacle() and setRobotModel() on EdgeDynamicObstacle()");
     // 得到连接的节点
     const VertexPose* bandpt = static_cast<const VertexPose*>(_vertices[0]);
-    // 就是计算_measurement以当前速度运行t时间段后与bandpt的距离
+    // 就是计算_measurement（就是障碍物）以当前障碍物的速度运行t时间段后与bandpt的距离
     double dist = robot_model_->estimateSpatioTemporalDistance(bandpt->pose(), _measurement, t_);
     // 表示一个线性惩罚:当var大于a+epsilon,不惩罚,当小于的时候线性惩罚
     // 计算误差值,如果路径点距离障碍物小于cfg_->obstacles.min_obstacle_dist+cfg_->optim.penalty_epsilon,那么就给惩罚,也就是error[0]=正值,否则为0

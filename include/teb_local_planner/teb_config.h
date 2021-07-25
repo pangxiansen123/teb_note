@@ -1,41 +1,3 @@
-/*********************************************************************
- *
- * Software License Agreement (BSD License)
- *
- *  Copyright (c) 2016,
- *  TU Dortmund - Institute of Control Theory and Systems Engineering.
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *   * Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *   * Redistributions in binary form must reproduce the above
- *     copyright notice, this list of conditions and the following
- *     disclaimer in the documentation and/or other materials provided
- *     with the distribution.
- *   * Neither the name of the institute nor the names of its
- *     contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- *  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- *  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- *  POSSIBILITY OF SUCH DAMAGE.
- *
- * Author: Christoph Rösmann
- *********************************************************************/
-
 #ifndef TEB_CONFIG_H_
 #define TEB_CONFIG_H_
 
@@ -84,6 +46,8 @@ public:
     // 从全局计划中提取的每两个连续通过点之间的分离(如果为负数:禁用)
     // 可能的意思就是化简全局路径规划点,每隔多少距离取一个
     // # * 如果为正，则从全局计划中引出通孔点（路径遵循模式）。 该值确定参考路径的分辨率（如果为负值，则禁用全局规划中每两个连续通孔之间的最小距离）。
+    // 如果是负数,那么就直接看局部地图中的终点不看过程点
+    // 这个与dt_ref没有关系,dt_ref是计算出来的路径点,而global_plan_viapoint_sep是通过点约束边,是为了使dt_ref计算出来的点与global_plan_viapoint_sep尽量贴合
     double global_plan_viapoint_sep; //!< Min. separation between each two consecutive via-points extracted from the global plan (if negative: disabled)
     // 如果为真，计划器将遵循存储容器中通过点的顺序
     // 这个判断可以减少计算量,但是可能引发错误
@@ -94,11 +58,22 @@ public:
     // 如果为真，规划器在速度、加速和转弯率计算中使用精确的弧长[不是简单计算,这样会增加计算量]，否则使用欧几里得近似。
     bool exact_arc_length; //!< If true, the planner uses the exact arc length in velocity, acceleration and turning rate computations [-> increased cpu time], otherwise the euclidean approximation is used.
     // 如果先前的目标更新的间隔大于指定的值(以米为单位)，则重新初始化轨迹(跳过热启动)
+    // 这个是同伦类里面计算的,就是局部路径的目标点和teb中的目标点相差太大,那么要做的就是重新设置
     double force_reinit_new_goal_dist; //!< Reinitialize the trajectory if a previous goal is updated with a seperation of more than the specified value in meters (skip hot-starting)
     double force_reinit_new_goal_angular; //!< Reinitialize the trajectory if a previous goal is updated with an angular difference of more than the specified value in radians (skip hot-starting)
+    // 指定每个采样间隔应在预测计划的哪个位置进行可行性检查。检测姿态在规划路径的可行性的时间间隔
+    // feasibility_check_no_poses表示要向前方看多远(这段范围进行判断)
     int feasibility_check_no_poses; //!< Specify up to which pose on the predicted plan the feasibility should be checked each sampling interval.
+    // 发布包含完整轨迹和活动障碍列表的计划器反馈(应仅用于评估或调试目的)
     bool publish_feedback; //!< Publish planner feedback containing the full trajectory and a list of active obstacles (should be enabled only for evaluation or debugging purposes)
+    // 在costmap碰撞检查中使用的最小角度分辨率。如果不符合，则添加中间进行插值。(rad)
+    // 检查两个姿态之间的距离是否大于机器人半径或方向差值大于指定的阈值，并在这种情况下进行插值。
+    // 这个为什么进行差值呢,因为图中可能两个位姿节点之间的距离变大,障碍物位于中间
+    // 所以要做的就是插值,在两个节点之间插值,然后判断是否和障碍物相撞
     double min_resolution_collision_check_angular; //! Min angular resolution used during the costmap collision check. If not respected, intermediate samples are added. [rad]
+    // 用于提取速度命令的姿态索引
+    // 什么意思呢?就是计算好图之后,位姿节点和时间节点都是会更新的,那么计算速度就是计算前几个(control_look_ahead_poses)位姿节点和时间节点
+    // 累计时间不能过长也就是control_look_ahead_poses*dt_ref
     int control_look_ahead_poses; //! Index of the pose used to extract the velocity command
   } trajectory; //!< Trajectory related parameters
 
@@ -132,6 +107,8 @@ public:
   //! Obstacle related parameters
   struct Obstacles
   {
+    // 根据cfg_->obstacles.inflation_dist与cfg_->obstacles.min_obstacle_dist大小进行判断到底是加入EdgeInflatedObstacle还是EdgeObstacle
+    // 障碍物的话:只考虑 cfg_->obstacles.min_obstacle_dist*cfg_->obstacles.obstacle_association_force_inclusion_factor内的障碍物和不远处最近的左右两边的障碍物
     double min_obstacle_dist; //!< Minimum desired separation from obstacles
     double inflation_dist; //!< buffer zone around obstacles with non-zero penalty costs (should be larger than min_obstacle_dist in order to take effect)
     double dynamic_obstacle_inflation_dist; //!< Buffer zone around predicted locations of dynamic obstacles with non-zero penalty costs (should be larger than min_obstacle_dist in order to take effect)
@@ -187,7 +164,8 @@ public:
     double weight_dynamic_obstacle_inflation; //!< Optimization weight for the inflation penalty of dynamic obstacles (should be small)
     double weight_viapoint; //!< Optimization weight for minimizing the distance to via-points
     double weight_prefer_rotdir; //!< Optimization weight for preferring a specific turning direction (-> currently only activated if an oscillation is detected, see 'oscillation_recovery'
-
+    // 一些特殊的权重(当前为'weight_obstacle')在每个外部TEB迭代中重复地按这个因子进行缩放(weight_new = weight_old*factor);
+    // 迭代地增加权值，而不是预先设置一个巨大的值，可以使底层优化问题的数值条件更好。
     double weight_adapt_factor; //!< Some special weights (currently 'weight_obstacle') are repeatedly scaled by this factor in each outer TEB iteration (weight_new = weight_old*factor); Increasing weights iteratively instead of setting a huge value a-priori leads to better numerical conditions of the underlying optimization problem.
     // 非线性障碍代价指数(cost = linear_cost * obstacle_cost_exponent)。设置为1禁用非线性成本(默认)
     double obstacle_cost_exponent; //!< Exponent for nonlinear obstacle cost (cost = linear_cost * obstacle_cost_exponent). Set to 1 to disable nonlinear cost (default)
@@ -198,6 +176,10 @@ public:
   {
     bool enable_homotopy_class_planning; //!< Activate homotopy class planning (Requires much more resources that simple planning, since multiple trajectories are optimized at once).
     bool enable_multithreading; //!< Activate multiple threading for planning multiple trajectories in parallel.
+    // 如果为真，则使用简单的左右方法（通过左侧或右侧的每个障碍物）来探索独特的轨迹以生成路径，
+    // 否则在起点和目标之间的指定区域随机采样可能的路线图。
+    // 这个在论文中会进行体现
+    // 默认为假,表示随机采样
     bool simple_exploration; //!< If true, distinctive trajectories are explored using a simple left-right approach (pass each obstacle on the left or right side) for path generation, otherwise sample possible roadmaps randomly in a specified region between start and goal.
     int max_number_classes; //!< Specify the maximum number of allowed alternative homotopy classes (limits computational effort)
     double selection_cost_hysteresis; //!< Specify how much trajectory cost must a new candidate have w.r.t. a previously selected trajectory in order to be selected (selection if new_cost < old_cost*factor).
@@ -214,15 +196,20 @@ public:
     double h_signature_threshold; //!< Two h-signatures are assumed to be equal, if both the difference of real parts and complex parts are below the specified threshold.
 
     double obstacle_keypoint_offset; //!< If simple_exploration is turned on, this parameter determines the distance on the left and right side of the obstacle at which a new keypoint will be cretead (in addition to min_obstacle_dist).
+    // 指定障碍航向和目标航向之间的归一化标量积的值，以便将它们（障碍物）考虑在内进行探索 [0,1]
     double obstacle_heading_threshold; //!< Specify the value of the normalized scalar product between obstacle heading and goal heading in order to take them (obstacles) into account for exploration [0,1]
 
     bool viapoints_all_candidates; //!< If true, all trajectories of different topologies are attached to the current set of via-points, otherwise only the trajectory sharing the same one as the initial/global plan.
 
     bool visualize_hc_graph; //!< Visualize the graph that is created for exploring new homotopy classes.
     double visualize_with_time_as_z_axis_scale; //!< If this value is bigger than 0, the trajectory and obstacles are visualized in 3d using the time as the z-axis scaled by this value. Most useful for dynamic obstacles.
+    // 如果启用，规划器将丢弃相对于最佳计划向后绕行的计划
     bool delete_detours_backwards; //!< If enabled, the planner will discard the plans detouring backwards with respect to the best plan
+    // 如果一个计划的开始方向与最佳计划的差异超过这个范围，则该计划被认为是绕道而行
     double detours_orientation_tolerance; //!< A plan is considered a detour if its start orientation differs more than this from the best plan
+    // 用于计算计划起始方向的向量的长度
     double length_start_orientation_vector; //!< Length of the vector used to compute the start orientation of a plan
+    // 如果 他们的执行时间/最佳teb的执行时间 > max_ratio_detours_duration_best_duration，则绕道被丢弃
     double max_ratio_detours_duration_best_duration; //!< Detours are discarted if their execution time / the execution time of the best teb is > this
   } hcp;
 

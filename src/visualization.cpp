@@ -1,40 +1,3 @@
-/*********************************************************************
- *
- * Software License Agreement (BSD License)
- *
- *  Copyright (c) 2016,
- *  TU Dortmund - Institute of Control Theory and Systems Engineering.
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *   * Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *   * Redistributions in binary form must reproduce the above
- *     copyright notice, this list of conditions and the following
- *     disclaimer in the documentation and/or other materials provided
- *     with the distribution.
- *   * Neither the name of the institute nor the names of its
- *     contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- *  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- *  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- *  POSSIBILITY OF SUCH DAMAGE.
- *
- * Author: Christoph Rösmann
- *********************************************************************/
 
 #include <teb_local_planner/visualization.h>
 #include <teb_local_planner/optimal_planner.h>
@@ -71,20 +34,20 @@ void TebVisualization::initialize(ros::NodeHandle& nh, const TebConfig& cfg)
 }
 
 
-
+// 全局路径
 void TebVisualization::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped>& global_plan) const
 {
   if ( printErrorWhenNotInitialized() ) return;
   base_local_planner::publishPlan(global_plan, global_plan_pub_); 
 }
-
+// 局部路径
 void TebVisualization::publishLocalPlan(const std::vector<geometry_msgs::PoseStamped>& local_plan) const
 {
   if ( printErrorWhenNotInitialized() )
     return;
   base_local_planner::publishPlan(local_plan, local_plan_pub_); 
 }
-
+// 发布局部信息和位姿信息
 void TebVisualization::publishLocalPlanAndPoses(const TimedElasticBand& teb) const
 {
   if ( printErrorWhenNotInitialized() )
@@ -118,7 +81,7 @@ void TebVisualization::publishLocalPlanAndPoses(const TimedElasticBand& teb) con
 }
 
 
-
+// 就是显示轮廓点
 void TebVisualization::publishRobotFootprintModel(const PoseSE2& current_pose, const BaseRobotFootprintModel& robot_model, const std::string& ns,
                                                   const std_msgs::ColorRGBA &color)
 {
@@ -126,11 +89,13 @@ void TebVisualization::publishRobotFootprintModel(const PoseSE2& current_pose, c
     return;
   
   std::vector<visualization_msgs::Marker> markers;
+  // 显示机器人的轮廓
   robot_model.visualizeRobot(current_pose, markers, color);
   if (markers.empty())
     return;
   
   int idx = 1000000;  // avoid overshadowing by obstacles
+  // 显示markers点
   for (std::vector<visualization_msgs::Marker>::iterator marker_it = markers.begin(); marker_it != markers.end(); ++marker_it, ++idx)
   {
     marker_it->header.frame_id = cfg_->map_frame;
@@ -149,7 +114,7 @@ void TebVisualization::publishInfeasibleRobotPose(const PoseSE2& current_pose, c
   publishRobotFootprintModel(current_pose, robot_model, "InfeasibleRobotPoses", toColorMsg(0.5, 0.8, 0.0, 0.0));
 }
 
-
+// 发布障碍物信息 显示是红的
 void TebVisualization::publishObstacles(const ObstContainer& obstacles) const
 {
   if ( obstacles.empty() || printErrorWhenNotInitialized() )
@@ -299,7 +264,9 @@ void TebVisualization::publishObstacles(const ObstContainer& obstacles) const
   }
 }
 
-
+// 通过点 显示是蓝的
+//transformed_plan就是已经弄好的局部路径规划
+//min_separation两个连续点之间的最小距离,处理后把通过点放到via_points_中
 void TebVisualization::publishViaPoints(const std::vector< Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d> >& via_points, const std::string& ns) const
 {
   if ( via_points.empty() || printErrorWhenNotInitialized() )
@@ -333,6 +300,7 @@ void TebVisualization::publishViaPoints(const std::vector< Eigen::Vector2d, Eige
   teb_marker_pub_.publish( marker );
 }
 
+// 显示是绿的
 void TebVisualization::publishTebContainer(const TebOptPlannerContainer& teb_planner, const std::string& ns)
 {
 if ( printErrorWhenNotInitialized() )
@@ -425,7 +393,7 @@ void TebVisualization::publishFeedbackMessage(const std::vector< boost::shared_p
   
   feedback_pub_.publish(msg);
 }
-
+// 显示障碍物信息
 void TebVisualization::publishFeedbackMessage(const TebOptimalPlanner& teb_planner, const ObstContainer& obstacles)
 {
   FeedbackMsg msg;

@@ -70,7 +70,7 @@ void TebOptimalPlanner::initialize(const TebConfig& cfg, ObstContainer* obstacle
   initialized_ = true;
 }
 
-
+// 设置显示的对象
 void TebOptimalPlanner::setVisualization(TebVisualizationPtr visualization)
 {
   visualization_ = visualization;
@@ -205,6 +205,8 @@ bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_out
         clearGraph();
         return false;
     }
+    // 然后调用组成内层循环的内部方法optimizeGraph()。
+    //这个函数就是利用g20优化器进行优化,优化次数是no_iterations(执行optimize(no_iterations))
     success = optimizeGraph(iterations_innerloop, false);
     if (!success) 
     {
@@ -217,13 +219,16 @@ bool TebOptimalPlanner::optimizeTEB(int iterations_innerloop, int iterations_out
       computeCurrentCost(obst_cost_scale, viapoint_cost_scale, alternative_time_cost);
       
     clearGraph();
-    
+    // 一些特殊的权重(当前为'weight_obstacle')在每个外部TEB迭代中重复地按这个因子进行缩放(weight_new = weight_old*factor);
+    // 迭代地增加权值，而不是预先设置一个巨大的值，可以使底层优化问题的数值条件更好。
+    // 就是障碍物的信息越来越大,越来越注重障碍物的信息
     weight_multiplier *= cfg_->optim.weight_adapt_factor;
   }
 
   return true;
 }
 // 设置机器人的起始速度,一般这个速度就是机器人当前的速度
+// 这个会作为加速度边中的参数使用
 void TebOptimalPlanner::setVelocityStart(const geometry_msgs::Twist& vel_start)
 {
   vel_start_.first = true;
@@ -373,6 +378,7 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier)
   //false新策略：对于每个teb姿势，只找到“相关”的障碍
   //添加静态障碍物约束，不确定因为我不考虑障碍物
   if (cfg_->obstacles.legacy_obstacle_association)
+    // 先不考虑这个 
     AddEdgesObstaclesLegacy(weight_multiplier);
   else
     //把障碍物信息加到图搜索中
@@ -414,20 +420,22 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier)
     AddEdgesKinematicsCarlike(); // we have a carlike robot since the turning radius is bounded from below.
 
   //增加方向约束，是经常向左还是经常向右，应该是这个意思
+  // 这个函数就是如果_measurement=1(preferLeft()),那么要做的就是惩罚右转的方向
   AddEdgesPreferRotDir();
     
   return true;  
 }
-//这个函数就是利用g20优化器进行优化
+//这个函数就是利用g20优化器进行优化,优化次数是no_iterations(执行optimize(no_iterations))
 bool TebOptimalPlanner::optimizeGraph(int no_iterations,bool clear_after)
 {
+  // 表示最大速度是否合法
   if (cfg_->robot.max_vel_x<0.01)
   {
     ROS_WARN("optimizeGraph(): Robot Max Velocity is smaller than 0.01m/s. Optimizing aborted...");
     if (clear_after) clearGraph();
     return false;	
   }
-  
+  // 都是不合法的东西
   if (!teb_.isInit() || teb_.sizePoses() < cfg_->trajectory.min_samples)
   {
     ROS_WARN("optimizeGraph(): TEB is empty or has too less elements. Skipping optimization.");
@@ -435,10 +443,14 @@ bool TebOptimalPlanner::optimizeGraph(int no_iterations,bool clear_after)
     return false;	
   }
   //g20轨迹优化器指针optimizer_
+  // 打印详细信息
   optimizer_->setVerbose(cfg_->optim.optimization_verbose);
   //初始化整个图结构
   optimizer_->initializeOptimization();
   //给定图的当前配置和存储在类实例中的当前设置，启动一次优化运行。
+  // 进行no_iterations次优化
+  // 优化完后,得到的结果是更改后的teb_图,就是图中的位姿节点和时间节点都发生了改变(使error最小)
+  // 所以计算速度的时候也是通过前几个节点进行计算的
   int iter = optimizer_->optimize(no_iterations);
 
   // Save Hessian for visualization
@@ -770,7 +782,7 @@ void TebOptimalPlanner::AddEdgesDynamicObstacles(double weight_multiplier)
   information(0,0) = cfg_->optim.weight_dynamic_obstacle * weight_multiplier;
   information(1,1) = cfg_->optim.weight_dynamic_obstacle_inflation;
   information(0,1) = information(1,0) = 0;
-  
+  // 遍历所有的障碍物
   for (ObstContainer::const_iterator obst = obstacles_->begin(); obst != obstacles_->end(); ++obst)
   {
     // 检查障碍物是否为动态障碍物,如果是就往下走
@@ -845,7 +857,7 @@ void TebOptimalPlanner::AddEdgesViaPoints()
     Eigen::Matrix<double,1,1> information;
     // 信息矩阵,存储的是权重值
     information.fill(cfg_->optim.weight_viapoint);
-    
+    // setViaPoint这个函数是在homotopy_class_planner文件中才会使用
     EdgeViaPoint* edge_viapoint = new EdgeViaPoint;
     edge_viapoint->setVertex(0,teb_.PoseVertex(index));
     edge_viapoint->setInformation(information);
@@ -1118,6 +1130,7 @@ void TebOptimalPlanner::AddEdgesKinematicsCarlike()
 }
 
 //添加所有的边(局部代价函数)来选择一个特定的转向方向(通过惩罚另一个)
+// 这个函数就是如果_measurement=1(preferLeft()),那么要做的就是惩罚右转的方向
 void TebOptimalPlanner::AddEdgesPreferRotDir()
 {
   //TODO(roesmann): Note, these edges can result in odd predictions, in particular
@@ -1129,7 +1142,8 @@ void TebOptimalPlanner::AddEdgesPreferRotDir()
   //                This needs to be analyzed in more detail!
   if (prefer_rotdir_ == RotType::none || cfg_->optim.weight_prefer_rotdir==0)
     return; // if weight equals zero skip adding edges!
-
+  // 当prefer_rotdir_ == RotType::none就直接退出
+  // 存储是否在优化中选择一个特定的初始旋转(可能在机器人振荡时被激活)
   if (prefer_rotdir_ != RotType::right && prefer_rotdir_ != RotType::left)
   {
     ROS_WARN("TebOptimalPlanner::AddEdgesPreferRotDir(): unsupported RotType selected. Skipping edge creation.");
@@ -1142,6 +1156,7 @@ void TebOptimalPlanner::AddEdgesPreferRotDir()
   
   for (int i=0; i < teb_.sizePoses()-1 && i < 3; ++i) // currently: apply to first 3 rotations
   {
+    // 这个函数就是如果_measurement=1(preferLeft()),那么要做的就是惩罚右转的方向
     EdgePreferRotDir* rotdir_edge = new EdgePreferRotDir;
     rotdir_edge->setVertex(0,teb_.PoseVertex(i));
     rotdir_edge->setVertex(1,teb_.PoseVertex(i+1));      
@@ -1155,7 +1170,7 @@ void TebOptimalPlanner::AddEdgesPreferRotDir()
     optimizer_->addEdge(rotdir_edge);
   }
 }
-
+// 没使用这个
 void TebOptimalPlanner::computeCurrentCost(double obst_cost_scale, double viapoint_cost_scale, bool alternative_time_cost)
 { 
   // check if graph is empty/exist  -> important if function is called between buildGraph and optimizeGraph/clearGraph
@@ -1211,7 +1226,7 @@ void TebOptimalPlanner::computeCurrentCost(double obst_cost_scale, double viapoi
     clearGraph();
 }
 
-
+// 根据图,计算速度
 void TebOptimalPlanner::extractVelocity(const PoseSE2& pose1, const PoseSE2& pose2, double dt, double& vx, double& vy, double& omega) const
 {
   if (dt == 0)
@@ -1223,7 +1238,8 @@ void TebOptimalPlanner::extractVelocity(const PoseSE2& pose1, const PoseSE2& pos
   }
   
   Eigen::Vector2d deltaS = pose2.position() - pose1.position();
-  
+  // 非全向机器人
+  // 计算线速度
   if (cfg_->robot.max_vel_y == 0) // nonholonomic robot
   {
     Eigen::Vector2d conf1dir( cos(pose1.theta()), sin(pose1.theta()) );
@@ -1247,9 +1263,12 @@ void TebOptimalPlanner::extractVelocity(const PoseSE2& pose1, const PoseSE2& pos
   
   // rotational velocity
   double orientdiff = g2o::normalize_theta(pose2.theta() - pose1.theta());
+  // 计算角速度
   omega = orientdiff/dt;
 }
-
+// look_ahead_poses什么意思呢?就是计算好图之后,位姿节点和时间节点都是会更新的,那么计算速度就是计算前几个(control_look_ahead_poses)位姿节点和时间节点
+// 默认control_look_ahead_poses为1
+// 根据图,计算速度
 bool TebOptimalPlanner::getVelocityCommand(double& vx, double& vy, double& omega, int look_ahead_poses) const
 {
   if (teb_.sizePoses()<2)
@@ -1265,6 +1284,7 @@ bool TebOptimalPlanner::getVelocityCommand(double& vx, double& vy, double& omega
   for(int counter = 0; counter < look_ahead_poses; ++counter)
   {
     dt += teb_.TimeDiff(counter);
+    // 累计时间不能过长,就是dt_ref * look_ahead_poses就可以
     if(dt >= cfg_->trajectory.dt_ref * look_ahead_poses)  // TODO: change to look-ahead time? Refine trajectory?
     {
         look_ahead_poses = counter + 1;
@@ -1281,6 +1301,7 @@ bool TebOptimalPlanner::getVelocityCommand(double& vx, double& vy, double& omega
   }
 	  
   // Get velocity from the first two configurations
+  // 根据图,计算速度
   extractVelocity(teb_.Pose(0), teb_.Pose(look_ahead_poses), dt, vx, vy, omega);
   return true;
 }
@@ -1365,14 +1386,20 @@ void TebOptimalPlanner::getFullTrajectory(std::vector<TrajectoryPointMsg>& traje
 }
 
 // 检查轨迹的冲突情况
+// footprint_spec机器人的轮廓
+// look_ahead_idx指定每个采样间隔应在预测计划的哪个位置进行可行性检查。检测姿态在规划路径的可行性的时间间隔
+// 检查两个姿态之间的距离是否大于机器人半径或方向差值大于指定的阈值，并在这种情况下进行插值。
+// 这个为什么进行差值呢,因为图中可能两个位姿节点之间的距离变大,障碍物位于中间
+// 所以要做的就是插值,在两个节点之间插值,然后判断是否和障碍物相撞
 bool TebOptimalPlanner::isTrajectoryFeasible(base_local_planner::CostmapModel* costmap_model, const std::vector<geometry_msgs::Point>& footprint_spec,
                                              double inscribed_radius, double circumscribed_radius, int look_ahead_idx)
 {
   if (look_ahead_idx < 0 || look_ahead_idx >= teb().sizePoses())
     look_ahead_idx = teb().sizePoses() - 1;
-  
+  // look_ahead_idx表示要向前方看多远(这段范围进行判断)
   for (int i=0; i <= look_ahead_idx; ++i)
   {           
+    // 检查机器人在这个点的时候障碍物是否和机器人碰撞
     if ( costmap_model->footprintCost(teb().Pose(i).x(), teb().Pose(i).y(), teb().Pose(i).theta(), footprint_spec, inscribed_radius, circumscribed_radius) < 0 )
     {
       if (visualization_)
@@ -1381,21 +1408,30 @@ bool TebOptimalPlanner::isTrajectoryFeasible(base_local_planner::CostmapModel* c
       }
       return false;
     }
-    // Checks if the distance between two poses is higher than the robot radius or the orientation diff is bigger than the specified threshold
-    // and interpolates in that case.
+    // Checks if the distance between two poses is higher than the robot radius or the orientation diff is bigger than the specified threshold and interpolates in that case.
+    // 检查两个姿态之间的距离是否大于机器人半径或方向差值大于指定的阈值，并在这种情况下进行插值。
+    // (如果障碍物将两个连续的poses分开，两个连续poses之间的中心可能与障碍物重合;-)!
     // (if obstacles are pushing two consecutive poses away, the center between two consecutive poses might coincide with the obstacle ;-)!
     if (i<look_ahead_idx)
     {
+      // 两个点的角度
       double delta_rot = g2o::normalize_theta(g2o::normalize_theta(teb().Pose(i+1).theta()) -
                                               g2o::normalize_theta(teb().Pose(i).theta()));
+      // 两个点的距离差
       Eigen::Vector2d delta_dist = teb().Pose(i+1).position()-teb().Pose(i).position();
+      // 检查两个姿态之间的距离是否大于机器人半径或方向差值大于指定的阈值，并在这种情况下进行插值。
+      // 这个为什么进行差值呢,因为图中可能两个位姿节点之间的距离变大,障碍物位于中间
+      // 所以要做的就是插值,在两个节点之间插值,然后判断是否和障碍物相撞
       if(fabs(delta_rot) > cfg_->trajectory.min_resolution_collision_check_angular || delta_dist.norm() > inscribed_radius)
       {
+        // 插值数目
         int n_additional_samples = std::max(std::ceil(fabs(delta_rot) / cfg_->trajectory.min_resolution_collision_check_angular), 
                                             std::ceil(delta_dist.norm() / inscribed_radius)) - 1;
+        // 从起步点开始进行插值
         PoseSE2 intermediate_pose = teb().Pose(i);
         for(int step = 0; step < n_additional_samples; ++step)
         {
+          // 位姿累加,然后下面进行判断
           intermediate_pose.position() = intermediate_pose.position() + delta_dist / (n_additional_samples + 1.0);
           intermediate_pose.theta() = g2o::normalize_theta(intermediate_pose.theta() + 
                                                            delta_rot / (n_additional_samples + 1.0));

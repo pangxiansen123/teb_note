@@ -231,7 +231,7 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
   }
 }
 
-
+// 求的轨迹点中所有时间的和
 double TimedElasticBand::getSumOfAllTimeDiffs() const
 {
   double time = 0;
@@ -579,8 +579,8 @@ int TimedElasticBand::findClosestTrajectoryPose(const Obstacle& obstacle, double
   /*teb_.updateAndPruneTEB(start, 
                            goal, 
                            cfg_->trajectory.min_samples);*/
-//不知道是里面找到是怎么找到最近的状态的
-//但是这个函数的作用就是删除之前走过的节点，然后用新的开始和目标（目标还是哪个目标）去更新两个固定的节点
+// 这个函数就是找到离new_start最近的点(最多找到十个点)
+// 找到后删除大于的点,并且将new_start和new_goal作为新的起点和终点
 void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_start, boost::optional<const PoseSE2&> new_goal, int min_samples)
 {
   // first and simple approach: change only start confs (and virtual start conf for inital velocity)
@@ -594,10 +594,11 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
     // dist_cache表示新的起点(这个新的起点就是离机器人最近的点)和上一个起点的差值
     double dist_cache = (new_start->position()- Pose(0).position()).norm();
     double dist;
+    // 要向前看多少个点
     int lookahead = std::min<int>( sizePoses()-min_samples, 10); // satisfy min_samples, otherwise max 10 samples
     // 就是离机器人最近的点
     int nearest_idx = 0;
-    // 就这样一直循环知道找到机器人最近的点,注意最多看10个点
+    // 就这样一直循环知道找到机器人最近的点,注意最多看10个点或者更少
     for (int i = 1; i<=lookahead; ++i)
     {
       dist = (new_start->position()- Pose(i).position()).norm();

@@ -362,10 +362,13 @@ namespace teb_local_planner
     ros::Time time_last_oscillation_;     //!< Store at which time stamp the last oscillation was detected
     // 储存最近首选的转向方向
     RotType last_preferred_rotdir_;       //!< Store recent preferred turning direction
+    // 这个是用来判断是否震荡的
     geometry_msgs::Twist last_cmd_;       //!< Store the last control command generated in computeVelocityCommands()
-
+    // 存储的机器人的轮廓
     std::vector<geometry_msgs::Point> footprint_spec_; //!< Store the footprint of the robot
+    // 机器人的内切半径
     double robot_inscribed_radius_;                    //!< The radius of the inscribed circle of the robot (collision possible)
+    // 机器人的外接半径
     double robot_circumscribed_radius;                 //!< The radius of the circumscribed circle of the robot
 
     std::string global_frame_;     //!< The frame in which the controller will run

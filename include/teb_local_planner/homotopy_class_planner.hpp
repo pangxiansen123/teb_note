@@ -42,7 +42,8 @@
 namespace teb_local_planner
 {
   
-  
+//  Fun fun_cplx_point是一个函数指针
+// 这个根据论文中的计算H-signature
 template<typename BidirIter, typename Fun>
 EquivalenceClassPtr HomotopyClassPlanner::calculateEquivalenceClass(BidirIter path_start, BidirIter path_end, Fun fun_cplx_point, const ObstContainer* obstacles,
                                                                     boost::optional<TimeDiffSequence::iterator> timediff_start, boost::optional<TimeDiffSequence::iterator> timediff_end)

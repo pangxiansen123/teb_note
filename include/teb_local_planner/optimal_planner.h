@@ -380,6 +380,7 @@ namespace teb_local_planner
     boost::shared_ptr<const g2o::SparseOptimizer> optimizer() const { return optimizer_; };
 
     /**
+    检查是否被优化
    * @brief Check if last optimization was successful
    * @return \c true if the last optimization returned without errors, 
    *         otherwise \c false (also if no optimization has been called before).
@@ -686,6 +687,7 @@ namespace teb_local_planner
     RotType prefer_rotdir_; //!< Store whether to prefer a specific initial rotation in optimization (might be activated in case the robot oscillates)
 
     // internal objects (memory management owned)
+    // 可视化对象
     TebVisualizationPtr visualization_; //!< Instance of the visualization class
     TimedElasticBand teb_;              //!< Actual trajectory object
     // 机器人的轮廓
@@ -694,6 +696,7 @@ namespace teb_local_planner
     boost::shared_ptr<g2o::SparseOptimizer> optimizer_; //!< g2o optimizer for trajectory optimization g20轨迹优化器指针
     //pair是将2个数据组合成一个数据，当需要这样的需求时就可以使用pair。
     // bool:检查是否应该考虑初始速度
+    // 这两个会作为加速度边中的参数进行使用的
     std::pair<bool, geometry_msgs::Twist> vel_start_; //!< Store the initial velocity at the start pose
     std::pair<bool, geometry_msgs::Twist> vel_goal_;  //!< Store the final velocity at the goal pose
 
@@ -705,10 +708,12 @@ namespace teb_local_planner
   };
 
   //! Abbrev. for shared instances of the TebOptimalPlanner
+  // 一个轨迹优化器指针
   typedef boost::shared_ptr<TebOptimalPlanner> TebOptimalPlannerPtr;
   //! Abbrev. for shared const TebOptimalPlanner pointers
   typedef boost::shared_ptr<const TebOptimalPlanner> TebOptimalPlannerConstPtr;
   //! Abbrev. for containers storing multiple teb optimal planners
+  // 表示多个轨迹优化器指针,这个是在同伦类中进行使用的
   typedef std::vector<TebOptimalPlannerPtr> TebOptPlannerContainer;
 
 } // namespace teb_local_planner
